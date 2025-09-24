@@ -1,0 +1,300 @@
+
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: agentic-rag-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-agentic_rag}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+      # Use trust authentication for development/testing
+      POSTGRES_HOST_AUTH_METHOD: ${POSTGRES_AUTH_METHOD:-trust}
+      # Enable shared_preload_libraries for extensions
+      POSTGRES_SHARED_PRELOAD_LIBRARIES: pg_stat_statements
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init-db.sql:ro
+      - ./scripts/postgres-config.conf:/etc/postgresql/postgresql.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-agentic_rag}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - agentic-rag-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+
+  # ChromaDB Vector Database
+  chromadb:
+    image: chromadb/chroma:0.4.22
+    container_name: agentic-rag-chromadb
+    environment:
+      CHROMA_SERVER_HOST: 0.0.0.0
+      CHROMA_SERVER_HTTP_PORT: 8000
+      CHROMA_SERVER_CORS_ALLOW_ORIGINS: '["http://localhost:8000", "http://localhost:3000"]'
+      # Authentication settings (configurable for production)
+      CHROMA_SERVER_AUTH_CREDENTIALS_PROVIDER: ${CHROMA_AUTH_PROVIDER:-}
+      CHROMA_SERVER_AUTH_CREDENTIALS: ${CHROMA_AUTH_TOKEN:-}
+      CHROMA_SERVER_AUTH_PROVIDER: ${CHROMA_AUTH_SERVER_PROVIDER:-}
+      # Persistence settings
+      IS_PERSISTENT: true
+      PERSIST_DIRECTORY: /chroma/chroma
+      # Performance settings
+      CHROMA_SERVER_GRPC_PORT: 50051
+      CHROMA_SEGMENT_CACHE_POLICY: LRU
+    ports:
+      - "${CHROMADB_PORT:-8001}:8000"
+      - "${CHROMADB_GRPC_PORT:-50051}:50051"
+    volumes:
+      - chromadb_data:/chroma/chroma
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - agentic-rag-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+
+  # MinIO Object Storage (S3-compatible)
+  minio:
+    image: minio/minio:RELEASE.2024-01-16T16-07-38Z
+    container_name: agentic-rag-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_REGION: ${MINIO_REGION:-us-east-1}
+      # Security and performance settings
+      MINIO_SERVER_URL: http://minio:9000
+      MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
+      MINIO_COMPRESS: "true"
+      MINIO_COMPRESS_EXTENSIONS: ".pdf,.doc,.docx,.txt"
+      MINIO_COMPRESS_MIME_TYPES: "application/pdf,application/msword,text/plain"
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 40s
+    networks:
+      - agentic-rag-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+    security_opt:
+      - no-new-privileges:true
+
+  # MinIO Client for bucket initialization
+  minio-init:
+    image: minio/mc:RELEASE.2024-01-13T08-44-48Z
+    container_name: agentic-rag-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - agentic-rag-network
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Waiting for MinIO to be ready...';
+      sleep 10;
+      /usr/bin/mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin};
+      /usr/bin/mc mb myminio/documents --ignore-existing;
+      /usr/bin/mc mb myminio/thumbnails --ignore-existing;
+      /usr/bin/mc mb myminio/exports --ignore-existing;
+      /usr/bin/mc policy set public myminio/documents;
+      /usr/bin/mc policy set public myminio/thumbnails;
+      /usr/bin/mc policy set private myminio/exports;
+      echo 'MinIO buckets initialized successfully';
+      "
+    restart: "no"
+
+  # Redis for Caching and Message Queue
+  redis:
+    image: redis:7.2-alpine
+    container_name: agentic-rag-redis
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD:-redis_password}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_password}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    networks:
+      - agentic-rag-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.25'
+        reservations:
+          memory: 256M
+          cpus: '0.1'
+    security_opt:
+      - no-new-privileges:true
+
+  # Development API Service
+  api:
+    build:
+      context: .
+      dockerfile: ops/docker/Dockerfile.dev
+      target: development
+    container_name: agentic-rag-api
+    environment:
+      # Database
+      POSTGRES_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-agentic_rag}
+      
+      # Vector Database
+      CHROMADB_URL: http://chromadb:8000
+      
+      # Object Storage
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_SECURE: "false"
+      
+      # Redis
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis}@redis:6379/0
+      
+      # API Configuration
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      API_RELOAD: "true"
+      
+      # Environment
+      ENVIRONMENT: development
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - .:/app
+      - /app/.venv  # Exclude virtual environment from bind mount
+    depends_on:
+      postgres:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - agentic-rag-network
+    restart: unless-stopped
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/src
+        - action: rebuild
+          path: pyproject.toml
+
+  # Granite-Docling Service (will be added in Sprint 2)
+  # docling:
+  #   image: granite-docling:latest
+  #   container_name: agentic-rag-docling
+  #   ports:
+  #     - "${DOCLING_PORT:-9002}:9000"
+  #   networks:
+  #     - agentic-rag-network
+  #   restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+    name: agentic-rag-postgres-data
+    driver_opts:
+      type: none
+      o: bind
+      device: ${POSTGRES_DATA_PATH:-./data/postgres}
+  chromadb_data:
+    driver: local
+    name: agentic-rag-chromadb-data
+    driver_opts:
+      type: none
+      o: bind
+      device: ${CHROMADB_DATA_PATH:-./data/chromadb}
+  minio_data:
+    driver: local
+    name: agentic-rag-minio-data
+    driver_opts:
+      type: none
+      o: bind
+      device: ${MINIO_DATA_PATH:-./data/minio}
+  redis_data:
+    driver: local
+    name: agentic-rag-redis-data
+    driver_opts:
+      type: none
+      o: bind
+      device: ${REDIS_DATA_PATH:-./data/redis}
+
+networks:
+  agentic-rag-network:
+    driver: bridge
+    name: agentic-rag-network
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
+    driver_opts:
+      com.docker.network.bridge.name: agentic-rag-br0
+      com.docker.network.driver.mtu: 1500

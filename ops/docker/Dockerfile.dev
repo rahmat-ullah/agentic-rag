@@ -1,0 +1,86 @@
+# Multi-stage Dockerfile for development and production
+
+# Base stage with common dependencies
+FROM python:3.11-slim as base
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    git \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app user
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Set work directory
+WORKDIR /app
+
+# Development stage
+FROM base as development
+
+# Install development dependencies
+RUN apt-get update && apt-get install -y \
+    vim \
+    htop \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy dependency files
+COPY pyproject.toml ./
+
+# Install Python dependencies
+RUN pip install -e ".[dev]"
+
+# Copy source code
+COPY . .
+
+# Change ownership to app user
+RUN chown -R appuser:appuser /app
+
+# Switch to app user
+USER appuser
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Default command for development
+CMD ["uvicorn", "agentic_rag.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+# Production stage
+FROM base as production
+
+# Copy dependency files
+COPY pyproject.toml ./
+
+# Install production dependencies only
+RUN pip install .
+
+# Copy source code
+COPY src/ ./src/
+
+# Change ownership to app user
+RUN chown -R appuser:appuser /app
+
+# Switch to app user
+USER appuser
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Default command for production
+CMD ["uvicorn", "agentic_rag.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

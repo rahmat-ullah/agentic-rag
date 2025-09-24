@@ -1,0 +1,103 @@
+# Docker Compose override for development environment
+# This file is automatically loaded by docker-compose and provides development-specific configurations
+
+
+
+services:
+  # Development-specific API configuration
+  api:
+    environment:
+      # Enhanced development settings
+      API_RELOAD: "true"
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG
+      
+      # Development-specific features
+      ENABLE_DOCS: "true"
+      ENABLE_REDOC: "true"
+      CORS_ORIGINS: '["http://localhost:3000", "http://localhost:8080"]'
+      
+      # Development database settings
+      DB_ECHO: "true"  # Echo SQL queries for debugging
+      
+    # Additional development volumes
+    volumes:
+      - .:/app
+      - /app/.venv
+      - /app/__pycache__
+      - /app/src/agentic_rag/__pycache__
+    
+    # Development port mapping
+    ports:
+      - "8000:8000"
+      - "5678:5678"  # Debug port for remote debugging
+    
+    # Development command with hot reload
+    command: >
+      sh -c "
+        echo 'Waiting for database...' &&
+        python -c 'import time; time.sleep(10)' &&
+        echo 'Starting development server...' &&
+        uvicorn agentic_rag.api.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir src
+      "
+
+  # Development database with additional logging
+  postgres:
+    environment:
+      POSTGRES_LOG_STATEMENT: all
+      POSTGRES_LOG_MIN_DURATION_STATEMENT: 0
+    
+    # Expose additional port for direct database access
+    ports:
+      - "5432:5432"
+
+  # Development ChromaDB with CORS enabled
+  chromadb:
+    environment:
+      CHROMA_SERVER_CORS_ALLOW_ORIGINS: '["*"]'
+      CHROMA_SERVER_CORS_ALLOW_METHODS: '["*"]'
+      CHROMA_SERVER_CORS_ALLOW_HEADERS: '["*"]'
+
+  # Development MinIO with console access
+  minio:
+    environment:
+      MINIO_BROWSER: "on"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  # Development Redis with easier access
+  redis:
+    ports:
+      - "6379:6379"
+
+  # Additional development services
+  
+  # Adminer for database management
+  adminer:
+    image: adminer:latest
+    container_name: agentic-rag-adminer
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DESIGN: pepa-linha
+    depends_on:
+      - postgres
+    networks:
+      - agentic-rag-network
+    restart: unless-stopped
+
+  # Redis Commander for Redis management
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: agentic-rag-redis-commander
+    environment:
+      REDIS_HOSTS: local:redis:6379:0:redis
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - agentic-rag-network
+    restart: unless-stopped

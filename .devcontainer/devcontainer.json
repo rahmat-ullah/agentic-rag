@@ -1,0 +1,197 @@
+{
+  "name": "Agentic RAG Development",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "api",
+  "workspaceFolder": "/app",
+  "shutdownAction": "stopCompose",
+
+  // Features to add to the dev container
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+
+  // Configure tool-specific properties
+  "customizations": {
+    "vscode": {
+      // Extensions to install
+      "extensions": [
+        // Python
+        "ms-python.python",
+        "ms-python.black-formatter",
+        "ms-python.isort",
+        "ms-python.flake8",
+        "ms-python.mypy-type-checker",
+        "ms-python.pylint",
+        
+        // Database
+        "ms-mssql.sql-database-projects-vscode",
+        "cweijan.vscode-postgresql-client2",
+        
+        // Docker
+        "ms-azuretools.vscode-docker",
+        
+        // Git
+        "eamodio.gitlens",
+        "github.vscode-pull-request-github",
+        
+        // Markdown
+        "davidanson.vscode-markdownlint",
+        "yzhang.markdown-all-in-one",
+        
+        // YAML/JSON
+        "redhat.vscode-yaml",
+        "ms-vscode.vscode-json",
+        
+        // REST Client
+        "humao.rest-client",
+        
+        // Code quality
+        "ms-vscode.vscode-eslint",
+        "streetsidesoftware.code-spell-checker",
+        
+        // Productivity
+        "ms-vscode.vscode-todo-highlight",
+        "gruntfuggly.todo-tree",
+        "aaron-bond.better-comments",
+        
+        // Testing
+        "ms-python.pytest",
+        
+        // AI/ML
+        "ms-toolsai.jupyter",
+        
+        // Theme
+        "github.github-vscode-theme"
+      ],
+
+      // Settings
+      "settings": {
+        // Python
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.linting.enabled": true,
+        "python.linting.pylintEnabled": false,
+        "python.linting.flake8Enabled": true,
+        "python.linting.mypyEnabled": true,
+        "python.formatting.provider": "black",
+        "python.formatting.blackArgs": ["--line-length=88"],
+        "python.sortImports.args": ["--profile=black"],
+        "python.testing.pytestEnabled": true,
+        "python.testing.unittestEnabled": false,
+        "python.testing.pytestArgs": ["tests"],
+        
+        // Editor
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+          "source.organizeImports": true,
+          "source.fixAll.flake8": true
+        },
+        "editor.rulers": [88],
+        "editor.tabSize": 4,
+        "editor.insertSpaces": true,
+        
+        // Files
+        "files.exclude": {
+          "**/__pycache__": true,
+          "**/.pytest_cache": true,
+          "**/.mypy_cache": true,
+          "**/node_modules": true,
+          "**/.git": false
+        },
+        "files.watcherExclude": {
+          "**/__pycache__/**": true,
+          "**/.pytest_cache/**": true,
+          "**/.mypy_cache/**": true
+        },
+        
+        // Terminal
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "terminal.integrated.profiles.linux": {
+          "bash": {
+            "path": "/bin/bash"
+          }
+        },
+        
+        // Git
+        "git.autofetch": true,
+        "git.enableSmartCommit": true,
+        
+        // Docker
+        "docker.showStartPage": false,
+        
+        // REST Client
+        "rest-client.environmentVariables": {
+          "local": {
+            "baseUrl": "http://localhost:8000",
+            "apiKey": "dev-api-key"
+          }
+        }
+      }
+    }
+  },
+
+  // Use 'forwardPorts' to make a list of ports inside the container available locally
+  "forwardPorts": [
+    8000,  // API
+    5432,  // PostgreSQL
+    8001,  // ChromaDB
+    6379,  // Redis
+    9000,  // MinIO
+    9001,  // MinIO Console
+    8080,  // Adminer
+    8081   // Redis Commander
+  ],
+
+  // Port attributes
+  "portsAttributes": {
+    "8000": {
+      "label": "API",
+      "onAutoForward": "notify"
+    },
+    "5432": {
+      "label": "PostgreSQL"
+    },
+    "8001": {
+      "label": "ChromaDB"
+    },
+    "6379": {
+      "label": "Redis"
+    },
+    "9000": {
+      "label": "MinIO"
+    },
+    "9001": {
+      "label": "MinIO Console",
+      "onAutoForward": "silent"
+    },
+    "8080": {
+      "label": "Adminer",
+      "onAutoForward": "silent"
+    },
+    "8081": {
+      "label": "Redis Commander",
+      "onAutoForward": "silent"
+    }
+  },
+
+  // Commands to run after container creation
+  "postCreateCommand": "pip install -e '.[dev]' && pre-commit install",
+
+  // Commands to run when starting the container
+  "postStartCommand": "echo 'Development environment ready! 🚀'",
+
+  // Set environment variables
+  "containerEnv": {
+    "ENVIRONMENT": "development",
+    "PYTHONPATH": "/app/src"
+  },
+
+  // Mount the Docker socket for Docker-in-Docker
+  "mounts": [
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+  ],
+
+  // Run as non-root user
+  "remoteUser": "appuser"
+}

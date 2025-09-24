@@ -7,7 +7,7 @@ name = "agentic-rag"
 version = "0.1.0"
 description = "Production-grade Agentic Retrieval-Augmented Generation system for procurement documents"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
     {name = "Agentic RAG Team", email = "team@agentic-rag.com"},
@@ -174,7 +174,17 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -q --strict-markers --strict-config"
+addopts = [
+    "-ra",
+    "-q",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=src/agentic_rag",
+    "--cov-report=html:htmlcov",
+    "--cov-report=xml:coverage.xml",
+    "--cov-report=term-missing",
+    "--cov-fail-under=60"
+]
 testpaths = ["tests"]
 pythonpath = ["src"]
 asyncio_mode = "auto"

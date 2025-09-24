@@ -1,0 +1,219 @@
+version: '3.8'
+
+# Production overrides for Docker Compose
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
+
+services:
+  # PostgreSQL with production settings
+  postgres:
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: md5
+      POSTGRES_SHARED_PRELOAD_LIBRARIES: pg_stat_statements
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.track=all
+      -c log_min_duration_statement=1000
+      -c log_checkpoints=on
+      -c log_connections=on
+      -c log_disconnections=on
+      -c max_connections=200
+      -c shared_buffers=512MB
+      -c effective_cache_size=2GB
+      -c maintenance_work_mem=128MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=32MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init-db.sql:ro
+      - ./scripts/postgres-prod.conf:/etc/postgresql/postgresql.conf:ro
+    restart: always
+
+  # ChromaDB with production authentication
+  chromadb:
+    environment:
+      CHROMA_SERVER_CORS_ALLOW_ORIGINS: '["https://yourdomain.com"]'
+      CHROMA_SERVER_AUTH_CREDENTIALS_PROVIDER: chromadb.auth.token.TokenAuthCredentialsProvider
+      CHROMA_SERVER_AUTH_CREDENTIALS: ${CHROMA_AUTH_TOKEN}
+      CHROMA_SERVER_AUTH_PROVIDER: chromadb.auth.token.TokenAuthServerProvider
+      CHROMA_SEGMENT_CACHE_POLICY: LRU
+      CHROMA_SEGMENT_CACHE_SIZE: 1000000
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+    restart: always
+
+  # MinIO with production security
+  minio:
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_REGION: ${MINIO_REGION:-us-east-1}
+      MINIO_SERVER_URL: https://minio.yourdomain.com
+      MINIO_BROWSER_REDIRECT_URL: https://minio-console.yourdomain.com
+      MINIO_COMPRESS: "true"
+      MINIO_COMPRESS_EXTENSIONS: ".pdf,.doc,.docx,.txt,.json"
+      MINIO_COMPRESS_MIME_TYPES: "application/pdf,application/msword,text/plain,application/json"
+      # Security settings
+      MINIO_PROMETHEUS_AUTH_TYPE: public
+      MINIO_PROMETHEUS_URL: http://prometheus:9090
+    command: server /data --console-address ":9001" --certs-dir /certs
+    volumes:
+      - minio_data:/data
+      - ./certs:/certs:ro  # SSL certificates for HTTPS
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    restart: always
+
+  # Redis with production configuration
+  redis:
+    command: >
+      redis-server 
+      --appendonly yes 
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --tcp-keepalive 300
+      --timeout 0
+      --tcp-backlog 511
+      --databases 16
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+    restart: always
+
+  # Production API service
+  api:
+    build:
+      context: .
+      dockerfile: ops/docker/Dockerfile
+      target: production
+    environment:
+      # Override development settings
+      ENVIRONMENT: production
+      DEBUG: "false"
+      LOG_LEVEL: WARNING
+      API_RELOAD: "false"
+      
+      # Security
+      SECRET_KEY: ${SECRET_KEY}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      
+      # Database with connection pooling
+      POSTGRES_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=prefer
+      DB_POOL_SIZE: 20
+      DB_MAX_OVERFLOW: 40
+      
+      # Vector Database with auth
+      CHROMADB_URL: http://chromadb:8000
+      CHROMA_AUTH_TOKEN: ${CHROMA_AUTH_TOKEN}
+      
+      # Object Storage with SSL
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_SECURE: "false"  # Set to true if using SSL
+      
+      # Redis with auth
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      REDIS_POOL_SIZE: 20
+      
+      # Production CORS
+      CORS_ORIGINS: '["https://yourdomain.com"]'
+      
+      # Disable development features
+      ENABLE_DOCS: "false"
+      ENABLE_REDOC: "false"
+      ENABLE_OPENAPI: "false"
+      
+      # Rate limiting
+      ENABLE_RATE_LIMITING: "true"
+      RATE_LIMIT_REQUESTS: 1000
+      RATE_LIMIT_WINDOW: 3600
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+      replicas: 2  # Run multiple instances for high availability
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# Production volumes with better performance
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/agentic-rag/postgres
+  chromadb_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/agentic-rag/chromadb
+  minio_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/agentic-rag/minio
+  redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/agentic-rag/redis
+
+# Production network with custom subnet
+networks:
+  agentic-rag-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
+    driver_opts:
+      com.docker.network.bridge.name: agentic-rag-prod
+      com.docker.network.driver.mtu: 1500
+      com.docker.network.bridge.enable_icc: "true"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
