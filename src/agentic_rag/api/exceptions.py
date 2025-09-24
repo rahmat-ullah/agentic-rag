@@ -120,12 +120,36 @@ class ConflictError(APIException):
 
 class RateLimitError(APIException):
     """Rate limit exceeded."""
-    
+
     def __init__(self, message: str = "Rate limit exceeded", details: Optional[Dict[str, Any]] = None):
         super().__init__(
             message=message,
             error_code="RATE_LIMIT_EXCEEDED",
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            details=details
+        )
+
+
+class ValidationError(APIException):
+    """Validation error."""
+
+    def __init__(self, message: str = "Validation failed", details: Optional[Dict[str, Any]] = None):
+        super().__init__(
+            message=message,
+            error_code="VALIDATION_ERROR",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            details=details
+        )
+
+
+class ServiceError(APIException):
+    """Service error."""
+
+    def __init__(self, message: str = "Service error", details: Optional[Dict[str, Any]] = None):
+        super().__init__(
+            message=message,
+            error_code="SERVICE_ERROR",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             details=details
         )
 

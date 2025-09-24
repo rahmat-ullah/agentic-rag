@@ -278,6 +278,10 @@ def create_app() -> FastAPI:
     from agentic_rag.api.routes import documents
     app.include_router(documents.router, prefix="/api/v1", tags=["Documents"])
 
+    # Import and include search router
+    from agentic_rag.api.routes import search
+    app.include_router(search.router, prefix="/api/v1", tags=["Search"])
+
     # Customize OpenAPI schema
     app.openapi = lambda: customize_openapi(app)
 

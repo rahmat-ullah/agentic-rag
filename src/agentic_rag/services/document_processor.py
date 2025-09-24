@@ -191,9 +191,36 @@ class DocumentProcessor:
             
             db_session.commit()
             
-            # Step 5: Complete processing
+            # Step 5: Trigger vector indexing
+            await self.status_tracker.update_progress(
+                db_session=db_session,
+                document_id=document_id,
+                tenant_id=tenant_id,
+                progress=0.9,
+                message="Triggering vector indexing",
+                metadata={"step": "indexing"}
+            )
+
+            # Trigger automatic vector indexing
+            try:
+                from agentic_rag.services.indexing_trigger import trigger_document_indexing_after_processing
+
+                indexing_request_id = await trigger_document_indexing_after_processing(
+                    document_id=document_id,
+                    tenant_id=tenant_id,
+                    chunking_result=chunking_result,
+                    db_session=db_session
+                )
+
+                logger.info(f"Triggered vector indexing for document {document_id}, request_id: {indexing_request_id}")
+
+            except Exception as e:
+                logger.error(f"Failed to trigger vector indexing for document {document_id}: {e}")
+                # Don't fail the entire processing if indexing trigger fails
+
+            # Step 6: Complete processing
             processing_time = time.time() - start_time
-            
+
             await self.status_tracker.complete_processing(
                 db_session=db_session,
                 document_id=document_id,
@@ -204,7 +231,8 @@ class DocumentProcessor:
                     "processing_time": processing_time,
                     "total_chunks": chunking_result.total_chunks,
                     "unique_chunks": chunking_result.unique_chunks,
-                    "duplicate_chunks": chunking_result.duplicate_chunks
+                    "duplicate_chunks": chunking_result.duplicate_chunks,
+                    "indexing_request_id": indexing_request_id if 'indexing_request_id' in locals() else None
                 }
             )
             

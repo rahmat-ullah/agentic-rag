@@ -421,9 +421,14 @@ _vector_ops_service: Optional[VectorOperationsService] = None
 async def get_vector_operations() -> VectorOperationsService:
     """Get or create the global vector operations service instance."""
     global _vector_ops_service
-    
+
     if _vector_ops_service is None:
         _vector_ops_service = VectorOperationsService()
         await _vector_ops_service.initialize()
-    
+
     return _vector_ops_service
+
+
+async def get_vector_operations_service() -> VectorOperationsService:
+    """Alias for get_vector_operations for compatibility."""
+    return await get_vector_operations()
