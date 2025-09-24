@@ -1,0 +1,55 @@
+# Dockerfile for IBM Granite-Docling-258M Service
+# This service provides document parsing capabilities using the Granite-Docling model
+
+FROM python:3.11-slim as base
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    git \
+    build-essential \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libgcc-s1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app user
+RUN groupadd -r docling && useradd -r -g docling docling
+
+# Set working directory
+WORKDIR /app
+
+# Install Python dependencies
+COPY ops/docker/requirements.docling.txt .
+RUN pip install --no-cache-dir -r requirements.docling.txt
+
+# Copy application code
+COPY ops/docker/docling-service/ ./
+
+# Create necessary directories
+RUN mkdir -p /app/models /app/temp /app/logs && \
+    chown -R docling:docling /app
+
+# Switch to app user
+USER docling
+
+# Expose port
+EXPOSE 9000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:9000/health || exit 1
+
+# Default command
+CMD ["python", "main.py"]

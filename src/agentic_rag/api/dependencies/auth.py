@@ -413,3 +413,69 @@ def require_tenant_isolation(resource_tenant_id: uuid.UUID):
             )
 
     return check_tenant_isolation
+
+
+async def get_current_user_websocket(token: str) -> User:
+    """
+    Get current user from JWT token for WebSocket connections.
+
+    This is a simplified version of get_current_user for WebSocket authentication.
+    WebSocket connections don't support standard HTTP authentication headers,
+    so the token must be passed as a query parameter or in the connection message.
+
+    Args:
+        token: JWT token string
+
+    Returns:
+        Authenticated user
+
+    Raises:
+        HTTPException: If token is invalid or user not found
+    """
+    from agentic_rag.services.auth import AuthService
+    from agentic_rag.adapters.database import get_database_adapter
+
+    try:
+        # Validate token
+        auth_service = AuthService()
+        payload = auth_service.verify_access_token(token)
+
+        if not payload:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload"
+            )
+
+        # Get user from database
+        db = get_database_adapter()
+        with db.get_session() as session:
+            user = session.query(User).filter(User.id == user_id).first()
+
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found"
+                )
+
+            if not user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User account is disabled"
+                )
+
+            return user
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication failed"
+        )

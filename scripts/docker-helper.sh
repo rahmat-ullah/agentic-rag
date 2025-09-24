@@ -59,8 +59,9 @@ check_requirements() {
 
 create_data_dirs() {
     log_info "Creating data directories..."
-    mkdir -p data/{postgres,chromadb,minio,redis}
+    mkdir -p data/{postgres,chromadb,minio,redis,docling/models,docling/temp}
     chmod 755 data/*
+    chmod 755 data/docling/*
     log_success "Data directories created"
 }
 

@@ -60,7 +60,7 @@ function Test-Requirements {
 
 function New-DataDirectories {
     Write-Info "Creating data directories..."
-    $dirs = @("data\postgres", "data\chromadb", "data\minio", "data\redis")
+    $dirs = @("data\postgres", "data\chromadb", "data\minio", "data\redis", "data\docling\models", "data\docling\temp", "data\clamav", "data\clamav\logs")
     foreach ($dir in $dirs) {
         if (-not (Test-Path $dir)) {
             New-Item -ItemType Directory -Path $dir -Force | Out-Null

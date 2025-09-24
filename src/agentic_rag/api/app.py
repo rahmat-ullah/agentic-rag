@@ -263,6 +263,21 @@ def create_app() -> FastAPI:
     app.include_router(users.router, prefix="/users", tags=["Users"])
     app.include_router(demo.router, prefix="/demo", tags=["Demo & Testing"])
 
+    # Import and include upload router
+    from agentic_rag.api.routes import upload
+    app.include_router(upload.router, prefix="/api/v1/upload", tags=["Upload"])
+
+    # Include upload router as /ingest endpoint (Sprint 2 specification)
+    app.include_router(upload.router, prefix="/ingest", tags=["Ingest"])
+
+    # Import and include WebSocket router
+    from agentic_rag.api.routes import websocket
+    app.include_router(websocket.router, prefix="/api/v1", tags=["WebSocket"])
+
+    # Import and include documents router
+    from agentic_rag.api.routes import documents
+    app.include_router(documents.router, prefix="/api/v1", tags=["Documents"])
+
     # Customize OpenAPI schema
     app.openapi = lambda: customize_openapi(app)
 

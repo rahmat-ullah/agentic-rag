@@ -190,6 +190,50 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  # ClamAV Antivirus Scanner
+  clamav:
+    image: clamav/clamav:1.2.1-alpine
+    container_name: agentic-rag-clamav
+    environment:
+      # ClamAV configuration
+      CLAMAV_NO_FRESHCLAMD: "false"
+      FRESHCLAMD_CHECKS: 2
+      FRESHCLAMD_UPDATE_INTERVAL: 3600
+      # Performance settings
+      CLAMD_STARTUP_TIMEOUT: 300
+      CLAMD_CONF_MaxThreads: 4
+      CLAMD_CONF_MaxConnectionQueueLength: 30
+      CLAMD_CONF_StreamMaxLength: 100M
+      CLAMD_CONF_MaxFileSize: 100M
+      CLAMD_CONF_MaxScanSize: 500M
+      # Logging
+      CLAMD_CONF_LogVerbose: "true"
+      CLAMD_CONF_LogTime: "true"
+    ports:
+      - "${CLAMAV_PORT:-3310}:3310"
+    volumes:
+      - clamav_data:/var/lib/clamav
+      - clamav_logs:/var/log/clamav
+    healthcheck:
+      test: ["CMD", "clamdscan", "--ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s  # Allow time for virus database download
+    networks:
+      - agentic-rag-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+
   # Development API Service
   api:
     build:
@@ -212,7 +256,18 @@ services:
       
       # Redis
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis}@redis:6379/0
-      
+
+      # Granite-Docling
+      DOCLING_ENDPOINT: http://docling:9000
+      DOCLING_MAX_PAGES: ${DOCLING_MAX_PAGES:-2000}
+      DOCLING_TIMEOUT: ${DOCLING_TIMEOUT:-300}
+
+      # ClamAV Virus Scanning
+      VIRUS_SCAN_ENABLED: "true"
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: 3310
+      VIRUS_SCAN_TIMEOUT: 30
+
       # API Configuration
       API_HOST: 0.0.0.0
       API_PORT: 8000
@@ -236,6 +291,10 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      clamav:
+        condition: service_healthy
+      docling:
+        condition: service_healthy
     networks:
       - agentic-rag-network
     restart: unless-stopped
@@ -247,15 +306,52 @@ services:
         - action: rebuild
           path: pyproject.toml
 
-  # Granite-Docling Service (will be added in Sprint 2)
-  # docling:
-  #   image: granite-docling:latest
-  #   container_name: agentic-rag-docling
-  #   ports:
-  #     - "${DOCLING_PORT:-9002}:9000"
-  #   networks:
-  #     - agentic-rag-network
-  #   restart: unless-stopped
+  # Granite-Docling Service
+  docling:
+    build:
+      context: .
+      dockerfile: ops/docker/Dockerfile.docling
+    container_name: agentic-rag-docling
+    environment:
+      # Service configuration
+      DOCLING_HOST: 0.0.0.0
+      DOCLING_PORT: 9000
+      DOCLING_WORKERS: 2
+
+      # Model configuration
+      DOCLING_MAX_PAGES: ${DOCLING_MAX_PAGES:-2000}
+      DOCLING_TIMEOUT: ${DOCLING_TIMEOUT:-300}
+      DOCLING_BATCH_SIZE: ${DOCLING_BATCH_SIZE:-1}
+
+      # Performance settings
+      DOCLING_MEMORY_LIMIT: ${DOCLING_MEMORY_LIMIT:-2G}
+      DOCLING_CPU_LIMIT: ${DOCLING_CPU_LIMIT:-2}
+
+      # Logging
+      LOG_LEVEL: ${DOCLING_LOG_LEVEL:-INFO}
+
+    ports:
+      - "${DOCLING_PORT:-9002}:9000"
+    volumes:
+      - docling_models:/app/models
+      - docling_temp:/app/temp
+    networks:
+      - agentic-rag-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s  # Allow time for model loading
+    deploy:
+      resources:
+        limits:
+          memory: ${DOCLING_MEMORY_LIMIT:-2G}
+          cpus: '${DOCLING_CPU_LIMIT:-2}'
+        reservations:
+          memory: 1G
+          cpus: '1'
 
 volumes:
   postgres_data:
@@ -286,6 +382,34 @@ volumes:
       type: none
       o: bind
       device: ${REDIS_DATA_PATH:-./data/redis}
+  docling_models:
+    driver: local
+    name: agentic-rag-docling-models
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DOCLING_MODELS_PATH:-./data/docling/models}
+  docling_temp:
+    driver: local
+    name: agentic-rag-docling-temp
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DOCLING_TEMP_PATH:-./data/docling/temp}
+  clamav_data:
+    driver: local
+    name: agentic-rag-clamav-data
+    driver_opts:
+      type: none
+      o: bind
+      device: ${CLAMAV_DATA_PATH:-./data/clamav}
+  clamav_logs:
+    driver: local
+    name: agentic-rag-clamav-logs
+    driver_opts:
+      type: none
+      o: bind
+      device: ${CLAMAV_LOGS_PATH:-./data/clamav/logs}
 
 networks:
   agentic-rag-network:
