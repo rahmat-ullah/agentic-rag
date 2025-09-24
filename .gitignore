@@ -228,7 +228,6 @@ secrets/
 .temp/
 
 # AI/ML specific
-models/
 checkpoints/
 wandb/
 mlruns/

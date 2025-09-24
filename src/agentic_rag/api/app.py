@@ -282,6 +282,18 @@ def create_app() -> FastAPI:
     from agentic_rag.api.routes import search
     app.include_router(search.router, prefix="/api/v1", tags=["Search"])
 
+    # Import and include three-hop search router
+    from agentic_rag.api.routes import three_hop_search
+    app.include_router(three_hop_search.router, prefix="/api/v1", tags=["Three-Hop Search"])
+
+    # Import and include LLM reranking router
+    from agentic_rag.api.routes import llm_reranking
+    app.include_router(llm_reranking.router, prefix="/api/v1/reranking", tags=["LLM Reranking"])
+
+    # Import and include enhanced query processing router
+    from agentic_rag.api.routes import enhanced_query_processing
+    app.include_router(enhanced_query_processing.router, prefix="/api/v1", tags=["Enhanced Query Processing"])
+
     # Customize OpenAPI schema
     app.openapi = lambda: customize_openapi(app)
 

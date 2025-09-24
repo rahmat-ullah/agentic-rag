@@ -49,6 +49,31 @@ from .pipeline import (
     process_document_chunks_async,
     process_document_chunks_sync
 )
+from .contextual_chunker import (
+    ContextualChunker,
+    ContextualChunk,
+    LocalContext,
+    GlobalContext,
+    ContextualMetadata,
+    ContextExtractionConfig,
+    get_contextual_chunker
+)
+from .contextual_pipeline import (
+    ContextualChunkingPipeline,
+    ContextualChunkingConfig,
+    ContextualChunkingResult,
+    ContextualChunkProcessor,
+    get_contextual_chunking_pipeline,
+    process_document_contextual_chunks_async
+)
+from .contextual_performance import (
+    PerformanceOptimizer,
+    PerformanceMetrics,
+    ContextCache,
+    MemoryManager,
+    ProgressTracker,
+    get_performance_optimizer
+)
 
 __all__ = [
     "BasicTextChunker",
@@ -80,5 +105,24 @@ __all__ = [
     "ChunkingResult",
     "get_chunking_pipeline",
     "process_document_chunks_async",
-    "process_document_chunks_sync"
+    "process_document_chunks_sync",
+    "ContextualChunker",
+    "ContextualChunk",
+    "LocalContext",
+    "GlobalContext",
+    "ContextualMetadata",
+    "ContextExtractionConfig",
+    "get_contextual_chunker",
+    "ContextualChunkingPipeline",
+    "ContextualChunkingConfig",
+    "ContextualChunkingResult",
+    "ContextualChunkProcessor",
+    "get_contextual_chunking_pipeline",
+    "process_document_contextual_chunks_async",
+    "PerformanceOptimizer",
+    "PerformanceMetrics",
+    "ContextCache",
+    "MemoryManager",
+    "ProgressTracker",
+    "get_performance_optimizer"
 ]

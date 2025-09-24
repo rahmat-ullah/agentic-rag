@@ -17,8 +17,28 @@ from agentic_rag.api.dependencies.auth import get_current_user, require_permissi
 from agentic_rag.api.dependencies.database import get_db_session
 from agentic_rag.api.models.responses import ErrorResponse, SuccessResponse
 from agentic_rag.config import get_settings
-from agentic_rag.models.database import Document, DocumentKind, DocumentStatus, DocumentLink, ChunkMeta, User
+from agentic_rag.models.database import Document, DocumentKind, DocumentStatus, DocumentLink, ChunkMeta, User, LinkType, UserFeedback
 from agentic_rag.services.storage import get_storage_service
+from agentic_rag.services.document_linking import (
+    get_document_linking_service,
+    DocumentLinkCreateRequest,
+    DocumentLinkUpdateRequest,
+    DocumentLinkValidationRequest,
+    DocumentLinkInfo,
+    DocumentLinksResponse,
+    LinkSuggestionsResponse,
+    BulkLinkOperation,
+    BulkLinkResult
+)
+from agentic_rag.services.confidence_scoring import (
+    get_confidence_scoring_service,
+    ConfidenceAnalysisRequest,
+    ConfidenceScore
+)
+from agentic_rag.services.link_validation import (
+    get_link_validation_service,
+    LinkValidationReport
+)
 import hashlib
 import hmac
 import time
@@ -506,40 +526,11 @@ async def delete_document(
 
 
 # ============================================================================
-# DOCUMENT LINKING MODELS
+# DOCUMENT LINKING MODELS (Legacy - using enhanced models from service)
 # ============================================================================
 
-class DocumentLinkCreate(BaseModel):
-    """Request model for creating document links."""
-
-    offer_id: UUID = Field(..., description="Offer document ID")
-    offer_type: str = Field(..., description="Offer type (technical, commercial, pricing)")
-    confidence: float = Field(..., ge=0.0, le=1.0, description="Link confidence score")
-
-
-class DocumentLinkInfo(BaseModel):
-    """Document link information."""
-
-    id: UUID = Field(..., description="Link ID")
-    rfq_id: UUID = Field(..., description="RFQ document ID")
-    offer_id: UUID = Field(..., description="Offer document ID")
-    offer_type: str = Field(..., description="Offer type")
-    confidence: float = Field(..., description="Link confidence score")
-    created_at: datetime = Field(..., description="Creation timestamp")
-
-    # Offer document details
-    offer_title: str = Field(..., description="Offer document title")
-    offer_kind: DocumentKind = Field(..., description="Offer document kind")
-    offer_status: DocumentStatus = Field(..., description="Offer document status")
-
-
-class DocumentLinksResponse(BaseModel):
-    """Response model for document links listing."""
-
-    rfq_id: UUID = Field(..., description="RFQ document ID")
-    rfq_title: str = Field(..., description="RFQ document title")
-    links: List[DocumentLinkInfo] = Field(..., description="List of document links")
-    total_count: int = Field(..., description="Total number of links")
+# Note: Enhanced models are imported from document_linking service
+# These are kept for backward compatibility if needed
 
 
 # ============================================================================
@@ -554,91 +545,20 @@ class DocumentLinksResponse(BaseModel):
 )
 async def create_document_link(
     rfq_id: UUID,
-    link_data: DocumentLinkCreate,
+    link_data: DocumentLinkCreateRequest,
     current_user: User = Depends(get_current_user),
     db_session: Session = Depends(get_db_session)
 ):
-    """Create a link between RFQ and Offer documents."""
+    """Create a link between RFQ and Offer documents with enhanced validation and audit trail."""
     try:
-        # Validate RFQ document exists and is accessible
-        rfq_document = db_session.query(Document).filter(
-            and_(
-                Document.id == rfq_id,
-                Document.tenant_id == current_user.tenant_id,
-                Document.deleted_at.is_(None),
-                Document.kind == DocumentKind.RFQ
-            )
-        ).first()
+        linking_service = get_document_linking_service()
 
-        if not rfq_document:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="RFQ document not found"
-            )
-
-        # Validate Offer document exists and is accessible
-        offer_document = db_session.query(Document).filter(
-            and_(
-                Document.id == link_data.offer_id,
-                Document.tenant_id == current_user.tenant_id,
-                Document.deleted_at.is_(None)
-            )
-        ).first()
-
-        if not offer_document:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Offer document not found"
-            )
-
-        # Validate offer type
-        valid_offer_types = ["technical", "commercial", "pricing"]
-        if link_data.offer_type not in valid_offer_types:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid offer type. Must be one of: {', '.join(valid_offer_types)}"
-            )
-
-        # Check if link already exists
-        existing_link = db_session.query(DocumentLink).filter(
-            and_(
-                DocumentLink.rfq_id == rfq_id,
-                DocumentLink.offer_id == link_data.offer_id,
-                DocumentLink.offer_type == link_data.offer_type,
-                DocumentLink.tenant_id == current_user.tenant_id
-            )
-        ).first()
-
-        if existing_link:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Document link already exists"
-            )
-
-        # Create new document link
-        document_link = DocumentLink(
-            tenant_id=current_user.tenant_id,
+        link_info = await linking_service.create_link(
+            db_session=db_session,
             rfq_id=rfq_id,
-            offer_id=link_data.offer_id,
-            offer_type=link_data.offer_type,
-            confidence=link_data.confidence
-        )
-
-        db_session.add(document_link)
-        db_session.commit()
-        db_session.refresh(document_link)
-
-        # Create response
-        link_info = DocumentLinkInfo(
-            id=document_link.id,
-            rfq_id=document_link.rfq_id,
-            offer_id=document_link.offer_id,
-            offer_type=document_link.offer_type,
-            confidence=document_link.confidence,
-            created_at=document_link.created_at,
-            offer_title=offer_document.title,
-            offer_kind=offer_document.kind,
-            offer_status=offer_document.status
+            request=link_data,
+            user_id=current_user.id,
+            tenant_id=current_user.tenant_id
         )
 
         return SuccessResponse(
@@ -646,8 +566,11 @@ async def create_document_link(
             message="Document link created successfully"
         )
 
-    except HTTPException:
-        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
     except Exception as e:
         db_session.rollback()
         raise HTTPException(
@@ -666,83 +589,348 @@ async def list_document_links(
     rfq_id: UUID,
     offer_type: Optional[str] = Query(None, description="Filter by offer type"),
     min_confidence: float = Query(0.0, ge=0.0, le=1.0, description="Minimum confidence score"),
+    include_suggestions: bool = Query(False, description="Include suggested links"),
     current_user: User = Depends(get_current_user),
     db_session: Session = Depends(get_db_session)
 ):
-    """List all links for an RFQ document."""
+    """List all links for an RFQ document with enhanced filtering and statistics."""
     try:
-        # Validate RFQ document exists and is accessible
-        rfq_document = db_session.query(Document).filter(
-            and_(
-                Document.id == rfq_id,
-                Document.tenant_id == current_user.tenant_id,
-                Document.deleted_at.is_(None),
-                Document.kind == DocumentKind.RFQ
-            )
-        ).first()
+        linking_service = get_document_linking_service()
 
-        if not rfq_document:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="RFQ document not found"
-            )
-
-        # Build query for document links
-        query = db_session.query(DocumentLink, Document).join(
-            Document, DocumentLink.offer_id == Document.id
-        ).filter(
-            and_(
-                DocumentLink.rfq_id == rfq_id,
-                DocumentLink.tenant_id == current_user.tenant_id,
-                DocumentLink.confidence >= min_confidence,
-                Document.deleted_at.is_(None)  # Exclude links to deleted offers
-            )
-        )
-
-        # Apply offer type filter
-        if offer_type:
-            query = query.filter(DocumentLink.offer_type == offer_type)
-
-        # Order by confidence descending
-        query = query.order_by(desc(DocumentLink.confidence))
-
-        # Execute query
-        results = query.all()
-
-        # Convert to response format
-        links = [
-            DocumentLinkInfo(
-                id=link.id,
-                rfq_id=link.rfq_id,
-                offer_id=link.offer_id,
-                offer_type=link.offer_type,
-                confidence=link.confidence,
-                created_at=link.created_at,
-                offer_title=offer_doc.title,
-                offer_kind=offer_doc.kind,
-                offer_status=offer_doc.status
-            )
-            for link, offer_doc in results
-        ]
-
-        response_data = DocumentLinksResponse(
+        # Get links using the enhanced service
+        response_data = await linking_service.get_links_for_rfq(
+            db_session=db_session,
             rfq_id=rfq_id,
-            rfq_title=rfq_document.title,
-            links=links,
-            total_count=len(links)
+            tenant_id=current_user.tenant_id,
+            include_suggestions=include_suggestions
         )
+
+        # Apply additional filters if specified
+        filtered_links = response_data.links
+
+        if offer_type:
+            filtered_links = [link for link in filtered_links if link.offer_type == offer_type]
+
+        if min_confidence > 0.0:
+            filtered_links = [link for link in filtered_links if link.confidence >= min_confidence]
+
+        # Update response with filtered results
+        response_data.links = filtered_links
+        response_data.total_count = len(filtered_links)
 
         return SuccessResponse(
             data=response_data,
-            message=f"Retrieved {len(links)} document links"
+            message=f"Retrieved {len(filtered_links)} document links"
         )
 
-    except HTTPException:
-        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to list document links: {str(e)}"
+        )
+
+
+@router.put(
+    "/links/{link_id}",
+    response_model=SuccessResponse[DocumentLinkInfo],
+    summary="Update document link",
+    description="Update an existing document link with enhanced features"
+)
+async def update_document_link(
+    link_id: UUID,
+    update_data: DocumentLinkUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """Update an existing document link."""
+    try:
+        linking_service = get_document_linking_service()
+
+        link_info = await linking_service.update_link(
+            db_session=db_session,
+            link_id=link_id,
+            request=update_data,
+            user_id=current_user.id,
+            tenant_id=current_user.tenant_id
+        )
+
+        return SuccessResponse(
+            data=link_info,
+            message="Document link updated successfully"
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update document link: {str(e)}"
+        )
+
+
+@router.delete(
+    "/links/{link_id}",
+    response_model=SuccessResponse[bool],
+    summary="Delete document link",
+    description="Delete a document link"
+)
+async def delete_document_link(
+    link_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """Delete a document link."""
+    try:
+        linking_service = get_document_linking_service()
+
+        success = await linking_service.delete_link(
+            db_session=db_session,
+            link_id=link_id,
+            tenant_id=current_user.tenant_id
+        )
+
+        return SuccessResponse(
+            data=success,
+            message="Document link deleted successfully"
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete document link: {str(e)}"
+        )
+
+
+@router.post(
+    "/links/{link_id}/validate",
+    response_model=SuccessResponse[DocumentLinkInfo],
+    summary="Validate document link",
+    description="Validate or invalidate a document link"
+)
+async def validate_document_link(
+    link_id: UUID,
+    validation_data: DocumentLinkValidationRequest,
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """Validate or invalidate a document link."""
+    try:
+        linking_service = get_document_linking_service()
+
+        link_info = await linking_service.validate_link(
+            db_session=db_session,
+            link_id=link_id,
+            request=validation_data,
+            user_id=current_user.id,
+            tenant_id=current_user.tenant_id
+        )
+
+        return SuccessResponse(
+            data=link_info,
+            message=f"Document link {'validated' if validation_data.validated else 'invalidated'} successfully"
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to validate document link: {str(e)}"
+        )
+
+
+@router.get(
+    "/{rfq_id}/suggestions",
+    response_model=SuccessResponse[LinkSuggestionsResponse],
+    summary="Generate link suggestions",
+    description="Generate automatic linking suggestions for an RFQ document"
+)
+async def generate_link_suggestions(
+    rfq_id: UUID,
+    max_suggestions: int = Query(10, ge=1, le=50, description="Maximum number of suggestions"),
+    min_confidence: float = Query(0.3, ge=0.0, le=1.0, description="Minimum confidence threshold"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """Generate automatic linking suggestions for an RFQ document."""
+    try:
+        linking_service = get_document_linking_service()
+
+        suggestions = await linking_service.generate_link_suggestions(
+            db_session=db_session,
+            rfq_id=rfq_id,
+            tenant_id=current_user.tenant_id,
+            max_suggestions=max_suggestions,
+            min_confidence=min_confidence
+        )
+
+        return SuccessResponse(
+            data=suggestions,
+            message=f"Generated {suggestions.total_count} link suggestions in {suggestions.processing_time:.2f}s"
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate link suggestions: {str(e)}"
+        )
+
+
+@router.post(
+    "/confidence-analysis",
+    response_model=SuccessResponse[ConfidenceScore],
+    summary="Analyze link confidence",
+    description="Perform detailed confidence analysis for a document link"
+)
+async def analyze_link_confidence(
+    analysis_request: ConfidenceAnalysisRequest,
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """Perform detailed confidence analysis for a document link."""
+    try:
+        confidence_service = get_confidence_scoring_service()
+
+        confidence_score = await confidence_service.calculate_confidence_score(
+            db_session=db_session,
+            request=analysis_request,
+            tenant_id=current_user.tenant_id
+        )
+
+        return SuccessResponse(
+            data=confidence_score,
+            message=f"Confidence analysis completed in {confidence_score.calculation_time:.2f}s"
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to analyze link confidence: {str(e)}"
+        )
+
+
+@router.get(
+    "/links/{link_id}/validation",
+    response_model=SuccessResponse[LinkValidationReport],
+    summary="Validate document link",
+    description="Perform comprehensive validation and quality assessment of a document link"
+)
+async def validate_document_link_quality(
+    link_id: UUID,
+    include_confidence_analysis: bool = Query(True, description="Include confidence analysis"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """Perform comprehensive validation and quality assessment of a document link."""
+    try:
+        validation_service = get_link_validation_service()
+
+        validation_report = await validation_service.validate_link(
+            db_session=db_session,
+            link_id=link_id,
+            tenant_id=current_user.tenant_id,
+            include_confidence_analysis=include_confidence_analysis
+        )
+
+        return SuccessResponse(
+            data=validation_report,
+            message=f"Link validation completed - Status: {validation_report.overall_status}"
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to validate document link: {str(e)}"
+        )
+
+
+@router.post(
+    "/links/bulk",
+    response_model=SuccessResponse[BulkLinkResult],
+    summary="Bulk link operations",
+    description="Perform bulk operations on document links (create, update, delete, validate)"
+)
+async def bulk_link_operations(
+    operation: BulkLinkOperation,
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """Perform bulk operations on document links."""
+    try:
+        linking_service = get_document_linking_service()
+
+        if operation.operation == "create":
+            result = await linking_service.bulk_create_links(
+                db_session=db_session,
+                operation=operation,
+                user_id=current_user.id,
+                tenant_id=current_user.tenant_id
+            )
+        elif operation.operation == "update":
+            result = await linking_service.bulk_update_links(
+                db_session=db_session,
+                operation=operation,
+                user_id=current_user.id,
+                tenant_id=current_user.tenant_id
+            )
+        elif operation.operation == "delete":
+            result = await linking_service.bulk_delete_links(
+                db_session=db_session,
+                operation=operation,
+                tenant_id=current_user.tenant_id
+            )
+        else:
+            raise ValueError(f"Unsupported bulk operation: {operation.operation}")
+
+        return SuccessResponse(
+            data=result,
+            message=f"Bulk {operation.operation} completed: {result.successful}/{result.total_requested} successful"
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to perform bulk operation: {str(e)}"
         )
 
 
