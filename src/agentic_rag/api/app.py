@@ -294,6 +294,10 @@ def create_app() -> FastAPI:
     from agentic_rag.api.routes import enhanced_query_processing
     app.include_router(enhanced_query_processing.router, prefix="/api/v1", tags=["Enhanced Query Processing"])
 
+    # Import and include orchestration router
+    from agentic_rag.api.routes import orchestration
+    app.include_router(orchestration.router, prefix="/api/v1/orchestration", tags=["Agent Orchestration"])
+
     # Customize OpenAPI schema
     app.openapi = lambda: customize_openapi(app)
 

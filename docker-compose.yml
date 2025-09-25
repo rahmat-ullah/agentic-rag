@@ -46,7 +46,7 @@ services:
 
   # ChromaDB Vector Database
   chromadb:
-    image: chromadb/chroma:0.4.22
+    image: chromadb/chroma:0.5.5
     container_name: agentic-rag-chromadb
     environment:
       CHROMA_SERVER_HOST: 0.0.0.0
@@ -62,6 +62,8 @@ services:
       # Performance settings
       CHROMA_SERVER_GRPC_PORT: 50051
       CHROMA_SEGMENT_CACHE_POLICY: LRU
+      # NumPy compatibility (fallback if needed)
+      # PIP_CONSTRAINT: /tmp/constraints.txt
     ports:
       - "${CHROMADB_PORT:-8001}:8000"
       - "${CHROMADB_GRPC_PORT:-50051}:50051"
@@ -192,7 +194,7 @@ services:
 
   # ClamAV Antivirus Scanner
   clamav:
-    image: clamav/clamav:1.2.1-alpine
+    image: clamav/clamav:latest
     container_name: agentic-rag-clamav
     environment:
       # ClamAV configuration
