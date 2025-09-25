@@ -21,21 +21,38 @@ logger = structlog.get_logger(__name__)
 
 class AgentCapability(str, Enum):
     """Enumeration of agent capabilities."""
-    
+
     # Core capabilities
     QUERY_ANALYSIS = "query_analysis"
     DOCUMENT_RETRIEVAL = "document_retrieval"
     ANSWER_SYNTHESIS = "answer_synthesis"
     CONTENT_REDACTION = "content_redaction"
     PRICING_ANALYSIS = "pricing_analysis"
-    
-    # Specialized capabilities
+
+    # Answer synthesis capabilities
+    CITATION_GENERATION = "citation_generation"
+    QUALITY_ASSESSMENT = "quality_assessment"
+
+    # Pricing analysis capabilities
+    COMPETITIVE_ANALYSIS = "competitive_analysis"
+    COST_MODELING = "cost_modeling"
+
+    # Advanced analysis capabilities
     DOCUMENT_COMPARISON = "document_comparison"
+    CONTENT_SUMMARIZATION = "content_summarization"
+    TABLE_EXTRACTION = "table_extraction"
     COMPLIANCE_CHECKING = "compliance_checking"
     RISK_ASSESSMENT = "risk_assessment"
-    TABLE_EXTRACTION = "table_extraction"
-    SUMMARIZATION = "summarization"
-    
+
+    # Privacy and security capabilities
+    PII_DETECTION = "pii_detection"
+    PRIVACY_PROTECTION = "privacy_protection"
+
+    # Search and retrieval capabilities
+    DOCUMENT_SEARCH = "document_search"
+    SEMANTIC_SEARCH = "semantic_search"
+    CONTEXTUAL_RETRIEVAL = "contextual_retrieval"
+
     # Meta capabilities
     WORKFLOW_PLANNING = "workflow_planning"
     TOOL_SELECTION = "tool_selection"
