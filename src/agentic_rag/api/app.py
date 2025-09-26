@@ -302,6 +302,26 @@ def create_app() -> FastAPI:
     from agentic_rag.api.endpoints import integrated_query
     app.include_router(integrated_query.router, prefix="/api/v1", tags=["Integrated Query Processing"])
 
+    # Import and include feedback router
+    from agentic_rag.api.routes import feedback
+    app.include_router(feedback.router, prefix="/api/v1", tags=["Feedback Collection"])
+
+    # Import and include corrections router
+    from agentic_rag.api.routes import corrections
+    app.include_router(corrections.router, prefix="/api/v1", tags=["Content Corrections"])
+
+    # Import and include learning router
+    from agentic_rag.api.routes import learning
+    app.include_router(learning.router, prefix="/api/v1", tags=["Learning Algorithms"])
+
+    # Import and include analytics router
+    from agentic_rag.api.routes import analytics
+    app.include_router(analytics.router, prefix="/api/v1", tags=["Feedback Analytics"])
+
+    # Import and include quality improvement router
+    from agentic_rag.api.routes import quality_improvement
+    app.include_router(quality_improvement.router, prefix="/api/v1", tags=["Quality Improvement"])
+
     # Customize OpenAPI schema
     app.openapi = lambda: customize_openapi(app)
 
