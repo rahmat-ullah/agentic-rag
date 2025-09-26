@@ -1,0 +1,52 @@
+# Kibana Configuration for Agentic RAG System
+
+server.name: "agentic-rag-kibana"
+server.host: "0.0.0.0"
+server.port: 5601
+
+# Elasticsearch configuration
+elasticsearch.hosts: ["http://elasticsearch:9200"]
+elasticsearch.username: ""
+elasticsearch.password: ""
+
+# Monitoring
+monitoring.ui.container.elasticsearch.enabled: true
+monitoring.ui.container.logstash.enabled: true
+
+# Security (disabled for development)
+xpack.security.enabled: false
+xpack.encryptedSavedObjects.encryptionKey: "agentic-rag-kibana-encryption-key-32-chars"
+
+# Logging
+logging.appenders.file.type: file
+logging.appenders.file.fileName: /usr/share/kibana/logs/kibana.log
+logging.appenders.file.layout.type: json
+
+logging.root.level: info
+logging.root.appenders: [default, file]
+
+# Server configuration
+server.maxPayload: 1048576
+server.shutdownTimeout: 5s
+
+# UI settings
+map.includeElasticMapsService: false
+
+# Telemetry
+telemetry.enabled: false
+telemetry.optIn: false
+
+# Default index pattern
+kibana.defaultAppId: "discover"
+
+# Session timeout
+xpack.security.session.idleTimeout: "1h"
+xpack.security.session.lifespan: "30d"
+
+# Advanced settings
+elasticsearch.requestTimeout: 30000
+elasticsearch.shardTimeout: 30000
+elasticsearch.pingTimeout: 3000
+
+# Memory settings
+node.options: "--max-old-space-size=1024"

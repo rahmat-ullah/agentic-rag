@@ -1,0 +1,75 @@
+# Filebeat Configuration for Agentic RAG System
+
+filebeat.inputs:
+- type: container
+  paths:
+    - '/var/lib/docker/containers/*/*.log'
+  processors:
+    - add_docker_metadata:
+        host: "unix:///var/run/docker.sock"
+    - decode_json_fields:
+        fields: ["message"]
+        target: ""
+        overwrite_keys: true
+
+- type: log
+  enabled: true
+  paths:
+    - /var/log/agentic-rag/*.log
+  fields:
+    service: agentic-rag
+    environment: development
+  fields_under_root: true
+  multiline.pattern: '^\d{4}-\d{2}-\d{2}'
+  multiline.negate: true
+  multiline.match: after
+
+# Processors
+processors:
+  - add_host_metadata:
+      when.not.contains.tags: forwarded
+  - add_cloud_metadata: ~
+  - add_docker_metadata: ~
+  - add_kubernetes_metadata: ~
+
+# Output configuration
+output.logstash:
+  hosts: ["logstash:5044"]
+
+# Alternative direct Elasticsearch output (comment out logstash output above)
+# output.elasticsearch:
+#   hosts: ["elasticsearch:9200"]
+#   index: "agentic-rag-logs-%{+yyyy.MM.dd}"
+#   template.name: "agentic-rag-logs"
+#   template.pattern: "agentic-rag-logs-*"
+
+# Logging
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /var/log/filebeat
+  name: filebeat
+  keepfiles: 7
+  permissions: 0644
+
+# Monitoring
+monitoring.enabled: true
+monitoring.elasticsearch:
+  hosts: ["elasticsearch:9200"]
+
+# Setup
+setup.template.enabled: true
+setup.template.name: "agentic-rag-logs"
+setup.template.pattern: "agentic-rag-logs-*"
+setup.template.settings:
+  index.number_of_shards: 1
+  index.number_of_replicas: 0
+
+setup.kibana:
+  host: "kibana:5601"
+
+# ILM Policy
+setup.ilm.enabled: true
+setup.ilm.rollover_alias: "agentic-rag-logs"
+setup.ilm.pattern: "{now/d}-000001"
+setup.ilm.policy: "agentic-rag-logs-policy"

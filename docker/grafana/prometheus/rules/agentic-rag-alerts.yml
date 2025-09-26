@@ -1,0 +1,212 @@
+groups:
+  - name: agentic-rag-api
+    rules:
+      - alert: HighErrorRate
+        expr: rate(agentic_rag_requests_total{status=~"4..|5.."}[5m]) / rate(agentic_rag_requests_total[5m]) * 100 > 5
+        for: 2m
+        labels:
+          severity: critical
+          service: api
+          team: platform
+        annotations:
+          summary: "High error rate detected"
+          description: "API error rate is {{ $value }}% which is above the 5% threshold"
+          runbook_url: "https://wiki.company.com/runbooks/high-error-rate"
+
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(agentic_rag_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          service: api
+          team: platform
+        annotations:
+          summary: "High response time detected"
+          description: "95th percentile response time is {{ $value }}s which is above the 2s threshold"
+          runbook_url: "https://wiki.company.com/runbooks/high-response-time"
+
+      - alert: LowUserSatisfaction
+        expr: agentic_rag_user_satisfaction_score < 3.5
+        for: 10m
+        labels:
+          severity: warning
+          service: api
+          team: product
+        annotations:
+          summary: "Low user satisfaction score"
+          description: "User satisfaction score is {{ $value }} which is below the 3.5 threshold"
+          runbook_url: "https://wiki.company.com/runbooks/low-satisfaction"
+
+      - alert: HighSystemUtilization
+        expr: agentic_rag_system_utilization_percent > 85
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+          team: platform
+        annotations:
+          summary: "High system utilization"
+          description: "{{ $labels.resource_type }} utilization is {{ $value }}% which is above the 85% threshold"
+          runbook_url: "https://wiki.company.com/runbooks/high-utilization"
+
+      - alert: APIServiceDown
+        expr: up{job="agentic-rag-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: api
+          team: platform
+        annotations:
+          summary: "API service is down"
+          description: "The Agentic RAG API service is not responding to health checks"
+          runbook_url: "https://wiki.company.com/runbooks/service-down"
+
+  - name: agentic-rag-business
+    rules:
+      - alert: LowSearchQueryRate
+        expr: rate(agentic_rag_search_queries_total[5m]) < 0.1
+        for: 15m
+        labels:
+          severity: warning
+          service: search
+          team: product
+        annotations:
+          summary: "Low search query rate"
+          description: "Search query rate is {{ $value }} queries/second which is unusually low"
+          runbook_url: "https://wiki.company.com/runbooks/low-search-activity"
+
+      - alert: HighVectorOperationLatency
+        expr: histogram_quantile(0.95, rate(agentic_rag_vector_operation_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          service: vector
+          team: platform
+        annotations:
+          summary: "High vector operation latency"
+          description: "95th percentile vector operation latency is {{ $value }}s which is above the 1s threshold"
+          runbook_url: "https://wiki.company.com/runbooks/high-vector-latency"
+
+      - alert: DocumentProcessingBacklog
+        expr: agentic_rag_documents_pending > 100
+        for: 10m
+        labels:
+          severity: warning
+          service: processing
+          team: platform
+        annotations:
+          summary: "Document processing backlog"
+          description: "There are {{ $value }} documents pending processing"
+          runbook_url: "https://wiki.company.com/runbooks/processing-backlog"
+
+  - name: agentic-rag-infrastructure
+    rules:
+      - alert: DatabaseConnectionFailure
+        expr: agentic_rag_database_connections_failed_total > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: database
+          team: platform
+        annotations:
+          summary: "Database connection failures"
+          description: "{{ $value }} database connection failures detected"
+          runbook_url: "https://wiki.company.com/runbooks/database-connection-failure"
+
+      - alert: ChromaDBDown
+        expr: up{job="chromadb"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: chromadb
+          team: platform
+        annotations:
+          summary: "ChromaDB service is down"
+          description: "ChromaDB vector database is not responding"
+          runbook_url: "https://wiki.company.com/runbooks/chromadb-down"
+
+      - alert: ElasticsearchDown
+        expr: up{job="elasticsearch-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: elasticsearch
+          team: platform
+        annotations:
+          summary: "Elasticsearch service is down"
+          description: "Elasticsearch log aggregation service is not responding"
+          runbook_url: "https://wiki.company.com/runbooks/elasticsearch-down"
+
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+          service: system
+          team: platform
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value }}% which is above the 90% threshold"
+          runbook_url: "https://wiki.company.com/runbooks/high-memory-usage"
+
+      - alert: HighDiskUsage
+        expr: (node_filesystem_size_bytes{fstype!="tmpfs"} - node_filesystem_free_bytes{fstype!="tmpfs"}) / node_filesystem_size_bytes{fstype!="tmpfs"} * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+          team: platform
+        annotations:
+          summary: "High disk usage"
+          description: "Disk usage on {{ $labels.device }} is {{ $value }}% which is above the 85% threshold"
+          runbook_url: "https://wiki.company.com/runbooks/high-disk-usage"
+
+  - name: agentic-rag-monitoring
+    rules:
+      - alert: PrometheusDown
+        expr: up{job="prometheus"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: prometheus
+          team: platform
+        annotations:
+          summary: "Prometheus is down"
+          description: "Prometheus monitoring service is not responding"
+          runbook_url: "https://wiki.company.com/runbooks/prometheus-down"
+
+      - alert: GrafanaDown
+        expr: up{job="grafana"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          service: grafana
+          team: platform
+        annotations:
+          summary: "Grafana is down"
+          description: "Grafana dashboard service is not responding"
+          runbook_url: "https://wiki.company.com/runbooks/grafana-down"
+
+      - alert: AlertmanagerDown
+        expr: up{job="alertmanager"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: alertmanager
+          team: platform
+        annotations:
+          summary: "Alertmanager is down"
+          description: "Alertmanager notification service is not responding"
+          runbook_url: "https://wiki.company.com/runbooks/alertmanager-down"
+
+      - alert: HighAlertVolume
+        expr: rate(prometheus_notifications_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          service: alerting
+          team: platform
+        annotations:
+          summary: "High alert volume"
+          description: "Alert notification rate is {{ $value }} alerts/second which may indicate alert storm"
+          runbook_url: "https://wiki.company.com/runbooks/high-alert-volume"

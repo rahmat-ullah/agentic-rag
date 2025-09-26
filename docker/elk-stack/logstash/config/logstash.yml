@@ -1,0 +1,33 @@
+# Logstash Configuration for Agentic RAG System
+
+http.host: "0.0.0.0"
+http.port: 9600
+
+# Pipeline settings
+pipeline.workers: 2
+pipeline.batch.size: 125
+pipeline.batch.delay: 50
+
+# Monitoring
+xpack.monitoring.enabled: true
+xpack.monitoring.elasticsearch.hosts: ["http://elasticsearch:9200"]
+
+# Logging
+log.level: info
+path.logs: /usr/share/logstash/logs
+
+# Dead letter queue
+dead_letter_queue.enable: true
+dead_letter_queue.max_bytes: 1024mb
+
+# Config reload
+config.reload.automatic: true
+config.reload.interval: 3s
+
+# Queue settings
+queue.type: memory
+queue.max_events: 0
+queue.max_bytes: 1024mb
+
+# JVM settings
+node.name: agentic-rag-logstash

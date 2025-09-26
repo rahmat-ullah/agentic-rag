@@ -24,10 +24,15 @@ from .middleware.auth import AuthenticationMiddleware
 from .middleware.tenant import TenantContextMiddleware
 from .middleware.security import SecurityHeadersMiddleware
 from .middleware.rate_limit import RateLimitMiddleware
+from .middleware.tracing import TracingMiddleware
 from .routes import health, auth, users, demo
 from .models.openapi import customize_openapi, OPENAPI_TAGS
 from .exceptions import setup_exception_handlers
 from .models.responses import ErrorResponse
+
+# Import monitoring and tracing services
+from agentic_rag.services.tracing_service import initialize_tracing
+from agentic_rag.services.monitoring_service import get_monitoring_service
 
 
 logger = structlog.get_logger(__name__)
@@ -54,11 +59,32 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             raise RuntimeError("Database connection failed")
         else:
             logger.warning("Database connection failed - continuing in development mode", error=str(e))
-    
+
+    # Initialize monitoring and tracing
+    try:
+        # Initialize OpenTelemetry tracing
+        initialize_tracing(app)
+        logger.info("OpenTelemetry tracing initialized")
+
+        # Start monitoring service
+        monitoring_service = await get_monitoring_service()
+        logger.info("Monitoring service started")
+
+    except Exception as e:
+        logger.warning("Monitoring/tracing initialization failed - continuing without monitoring", error=str(e))
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down Agentic RAG API")
+
+    # Shutdown monitoring and tracing
+    try:
+        monitoring_service = await get_monitoring_service()
+        await monitoring_service.stop()
+        logger.info("Monitoring service stopped")
+    except Exception as e:
+        logger.warning("Error stopping monitoring service", error=str(e))
 
 
 def create_app() -> FastAPI:
@@ -147,16 +173,19 @@ def create_app() -> FastAPI:
     )
     
     # Add middleware (order matters - last added is executed first)
-    
+
+    # Tracing middleware (should be early in the chain)
+    app.add_middleware(TracingMiddleware)
+
     # Security headers middleware
     app.add_middleware(SecurityHeadersMiddleware)
-    
+
     # Rate limiting middleware
     app.add_middleware(RateLimitMiddleware)
-    
+
     # Tenant context middleware
     app.add_middleware(TenantContextMiddleware)
-    
+
     # Authentication middleware
     app.add_middleware(AuthenticationMiddleware)
     
@@ -321,6 +350,10 @@ def create_app() -> FastAPI:
     # Import and include quality improvement router
     from agentic_rag.api.routes import quality_improvement
     app.include_router(quality_improvement.router, prefix="/api/v1", tags=["Quality Improvement"])
+
+    # Import and include monitoring router
+    from agentic_rag.api.routes import monitoring
+    app.include_router(monitoring.router, prefix="/api/v1/monitoring", tags=["Monitoring & Observability"])
 
     # Customize OpenAPI schema
     app.openapi = lambda: customize_openapi(app)

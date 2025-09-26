@@ -1,0 +1,99 @@
+# Prometheus Configuration for Agentic RAG System
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: "agentic-rag"
+    environment: "development"
+
+rule_files:
+  - "/etc/prometheus/rules/*.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Agentic RAG API
+  - job_name: "agentic-rag-api"
+    static_configs:
+      - targets: ["agentic-rag-api:8000"]
+    scrape_interval: 15s
+    metrics_path: /metrics
+    scrape_timeout: 10s
+    honor_labels: true
+    params:
+      format: ["prometheus"]
+
+  # Node Exporter (System Metrics)
+  - job_name: "node-exporter"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # cAdvisor (Container Metrics)
+  - job_name: "cadvisor"
+    static_configs:
+      - targets: ["cadvisor:8080"]
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # PostgreSQL Exporter (if available)
+  - job_name: "postgres-exporter"
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Redis Exporter (if available)
+  - job_name: "redis-exporter"
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # ChromaDB (if metrics available)
+  - job_name: "chromadb"
+    static_configs:
+      - targets: ["chromadb:8000"]
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Elasticsearch Exporter (if available)
+  - job_name: "elasticsearch-exporter"
+    static_configs:
+      - targets: ["elasticsearch-exporter:9114"]
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # MinIO Exporter (if available)
+  - job_name: "minio"
+    static_configs:
+      - targets: ["minio:9000"]
+    scrape_interval: 30s
+    metrics_path: /minio/v2/metrics/cluster
+
+# Storage configuration
+storage:
+  tsdb:
+    path: /prometheus
+    retention.time: 30d
+    retention.size: 10GB
+# Remote write configuration (for long-term storage)
+# remote_write:
+#   - url: "http://cortex:9009/api/prom/push"
+#     queue_config:
+#       max_samples_per_send: 1000
+#       max_shards: 200
+#       capacity: 2500
